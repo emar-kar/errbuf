@@ -1,7 +1,7 @@
-// Package errbuf containes errors buffer, which allows to collect errors
+// Package errbuf contains errors buffer, which allows to collect errors
 // before processing them. In addition this buffer can hold warnings, which are
-// the same error type, but can be accessed via their own methods and process
-// them accordingly. This buffer is goroutine safe and operates with mutex read/write.
+// the same error type, but can be accessed via their own methods and processed
+// accordingly. This buffer is goroutine safe.
 package errbuf
 
 import "sync"
