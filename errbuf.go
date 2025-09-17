@@ -62,7 +62,12 @@ func (buf *BufferedError) Unwrap() []error {
 }
 
 // Add adds given error to the errors buffer.
+// No-op if error is nil.
 func (buf *BufferedError) Add(err error) {
+	if err == nil {
+		return
+	}
+
 	buf.Lock()
 	defer buf.Unlock()
 
@@ -70,7 +75,12 @@ func (buf *BufferedError) Add(err error) {
 }
 
 // Warn adds given error to the warnings buffer.
+// No-op if error is nil.
 func (buf *BufferedError) Warn(err error) {
+	if err == nil {
+		return
+	}
+
 	buf.Lock()
 	defer buf.Unlock()
 
