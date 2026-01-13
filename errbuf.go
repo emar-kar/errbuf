@@ -1,123 +1,199 @@
-// Package errbuf contains errors buffer, which allows to collect errors
-// before processing them. In addition this buffer can hold warnings, which are
-// the same error type, but can be accessed via their own methods and processed
-// accordingly. This buffer is goroutine safe.
+// Package errbuf allows to bufferize errors before processing them.
 package errbuf
 
-import "sync"
+import (
+	"fmt"
+	"io"
+	"strings"
+	"sync"
+)
 
-// BufferedError represents cache to collect errors during the process before fail.
-// Also allows to collect not critical warnings which can be just reported instead.
+var (
+	// Internal pool to reduce GC work.
+	stringsBuildersPool = sync.Pool{
+		New: func() any { return &strings.Builder{} },
+	}
+
+	singleLineSep = []byte("; ")
+	multilineSep  = []byte("\n")
+)
+
+// BufferedError wrapper around errors slice with mutex.
 type BufferedError struct {
 	sync.RWMutex
 
 	errors []error
-
-	// Warnings is another buffer to collect not critical errors.
-	// It can collect errors, which does not affect the outcome
-	// in general, but should be logged or processed as well.
-	// This slice allows to collect all the warnings. It can be
-	// checked with [ShouldWarn] method and has additional
-	// stringer [Warning] method.
-	warnings []error
 }
 
 // Error formats errors in the buffer into the string.
-func (buf *BufferedError) Error() string {
-	buf.Lock()
-	defer buf.Unlock()
+func (b *BufferedError) Error() string {
+	b.RLock()
+	defer b.RUnlock()
 
-	return bufToString(buf.errors)
-}
+	switch len(b.errors) {
+	case 0:
+		return ""
+	case 1:
+		return b.errors[0].Error()
+	default:
+		size := (len(b.errors) - 1) * len(singleLineSep)
 
-// Warning formats warnings in the buffer into the string.
-func (buf *BufferedError) Warning() string {
-	buf.Lock()
-	defer buf.Unlock()
-
-	return bufToString(buf.warnings)
-}
-
-// bufToString converts given slice of errors into the string.
-func bufToString(sl []error) string {
-	var b []byte
-
-	for i, err := range sl {
-		if i > 0 {
-			b = append(b, '\n')
+		for _, err := range b.errors {
+			if err != nil {
+				size += len(err.Error())
+			}
 		}
 
-		b = append(b, err.Error()...)
-	}
+		builder := stringsBuildersPool.Get().(*strings.Builder)
+		builder.Reset()
+		builder.Grow(size)
 
-	return string(b)
+		b.writeSingleLine(builder)
+
+		result := builder.String()
+		stringsBuildersPool.Put(builder)
+		return result
+	}
 }
 
-// Unwrap returns copy of the buffer errors.
-func (buf *BufferedError) Unwrap() []error {
-	buf.Lock()
-	defer buf.Unlock()
+func (b *BufferedError) writeSingleLine(w io.Writer) {
+	for i, err := range b.errors {
+		if err != nil {
+			if i > 0 {
+				w.Write(singleLineSep)
+			}
 
-	return append([]error{}, buf.errors...)
+			io.WriteString(w, err.Error())
+		}
+	}
+}
+
+func (b *BufferedError) writeMultiLine(w io.Writer, ident int) {
+	spaces := make([]byte, ident)
+	for i := range ident {
+		spaces[i] = ' '
+	}
+
+	for i, err := range b.errors {
+		if err != nil {
+			if i > 0 {
+				w.Write(multilineSep)
+			}
+
+			if e, ok := err.(*BufferedError); ok {
+				e.writeMultiLine(w, ident+1)
+			} else {
+				w.Write(spaces)
+				io.WriteString(w, err.Error())
+			}
+		}
+	}
+}
+
+func (b *BufferedError) Format(f fmt.State, verb rune) {
+	b.RLock()
+	defer b.RUnlock()
+
+	switch verb {
+	case 'v':
+		if f.Flag('+') {
+			fmt.Fprintf(f, "BufferedError{errors:%+v}", b.errors)
+			return
+		}
+
+		b.writeMultiLine(f, 0)
+	default:
+		b.writeSingleLine(f)
+	}
+}
+
+// Unwrap returns a copy of the buffer errors.
+func (b *BufferedError) Unwrap() []error {
+	b.RLock()
+	defer b.RUnlock()
+
+	return append(([]error)(nil), b.errors...)
+}
+
+// Grow grows internal errors slice capacity to hold n number of errors.
+// If actual capacity is bigger than n this function is no-op.
+func (b *BufferedError) Grow(n int) {
+	b.RLock()
+	if cap(b.errors) < n {
+		old := b.errors
+		b.errors = make([]error, len(old), n)
+		copy(b.errors, old)
+	}
+	b.RUnlock()
+}
+
+// Clear clears internal slice of errors.
+// Freed memory will be collected by GC.
+func (b *BufferedError) Clear() {
+	b.Lock()
+	b.errors = ([]error)(nil)
+	b.Unlock()
 }
 
 // Add adds given error to the errors buffer.
-// No-op if error is nil.
-func (buf *BufferedError) Add(err error) {
-	if err == nil {
+// No-op if errors len is 0.
+func (b *BufferedError) Add(errs ...error) {
+	if len(errs) == 0 {
 		return
 	}
 
-	buf.Lock()
-	defer buf.Unlock()
-
-	buf.errors = append(buf.errors, err)
+	b.Lock()
+	b.errors = append(b.errors, errs...)
+	b.Unlock()
 }
 
-// Warn adds given error to the warnings buffer.
-// No-op if error is nil.
-func (buf *BufferedError) Warn(err error) {
-	if err == nil {
-		return
-	}
+// Err returns nil if error buffer is empty or contains
+// only nil errors.
+func (b *BufferedError) Err() error {
+	b.Lock()
+	defer b.Unlock()
 
-	buf.Lock()
-	defer buf.Unlock()
-
-	buf.warnings = append(buf.warnings, err)
-}
-
-// Err returns nil if error buffer is empty.
-func (buf *BufferedError) Err() error {
-	buf.Lock()
-	defer buf.Unlock()
-
-	if len(buf.errors) == 0 {
+	if len(b.errors) == 0 {
 		return nil
 	}
 
-	return buf
-}
+	for _, err := range b.errors {
+		if err != nil {
+			return b
+		}
+	}
 
-// ShouldWarn returns true if warnings buffer is not empty.
-func (buf *BufferedError) ShouldWarn() bool {
-	buf.Lock()
-	defer buf.Unlock()
-
-	return len(buf.warnings) != 0
+	return nil
 }
 
 // NewErrorsBuffer creates empty [BufferedError].
+//
+// Deprecated: use [New] instead.
 func NewErrorsBuffer() *BufferedError {
-	return &BufferedError{errors: make([]error, 0), warnings: make([]error, 0)}
+	return New()
 }
 
 // NewBufferFromError creates new [BufferedError] from the given error.
+//
+// Deprecated: use [NewFromError] instead.
 func NewBufferFromError(err error) *BufferedError {
-	return &BufferedError{errors: []error{err}, warnings: make([]error, 0)}
+	return NewFromError(err)
 }
 
-// NewBufferFromWarning creates new [BuffereError] and adds given error to warnings.
+// New creates empty [BufferedError].
+func New() *BufferedError {
+	return &BufferedError{errors: ([]error)(nil)}
+}
+
+// NewFromError creates new [BufferedError] from the given error.
+func NewFromError(err error) *BufferedError {
+	return &BufferedError{errors: []error{err}}
+}
+
+// NewBufferFromWarning creates new [BufferedError] and adds given error to warnings.
+//
+// Deprecated: warnings buffer was removed.
 func NewBufferFromWarning(err error) *BufferedError {
-	return &BufferedError{errors: make([]error, 0), warnings: []error{err}}
+	panic("BufferedError does not contain warnings buffer")
+	return nil
 }
