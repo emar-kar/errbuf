@@ -130,7 +130,7 @@ func (b *BufferedError) Clear() {
 }
 
 // Add adds given error to the errors buffer.
-// No-op if errors len is 0.
+// No-op if error is nil.
 func (b *BufferedError) Add(err error) {
 	if err == nil {
 		return
@@ -141,8 +141,7 @@ func (b *BufferedError) Add(err error) {
 	b.Unlock()
 }
 
-// Err returns nil if error buffer is empty or contains
-// only nil errors.
+// Err returns nil if error buffer is empty.
 func (b *BufferedError) Err() error {
 	b.Lock()
 	defer b.Unlock()
@@ -154,20 +153,6 @@ func (b *BufferedError) Err() error {
 	return b
 }
 
-// NewErrorsBuffer creates empty [BufferedError].
-//
-// Deprecated: use [New] instead.
-func NewErrorsBuffer() *BufferedError {
-	return New()
-}
-
-// NewBufferFromError creates new [BufferedError] from the given error.
-//
-// Deprecated: use [NewFromError] instead.
-func NewBufferFromError(err error) *BufferedError {
-	return NewFromError(err)
-}
-
 // New creates empty [BufferedError].
 func New() *BufferedError {
 	return &BufferedError{errors: ([]error)(nil)}
@@ -175,12 +160,8 @@ func New() *BufferedError {
 
 // NewFromError creates new [BufferedError] from the given error.
 func NewFromError(err error) *BufferedError {
+	if err == nil {
+		return New()
+	}
 	return &BufferedError{errors: []error{err}}
-}
-
-// NewBufferFromWarning creates new [BufferedError] and adds given error to warnings.
-//
-// Deprecated: warnings buffer was removed.
-func NewBufferFromWarning(err error) *BufferedError {
-	panic("BufferedError does not contain warnings buffer")
 }
