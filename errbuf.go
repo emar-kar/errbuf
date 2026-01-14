@@ -39,9 +39,7 @@ func (b *BufferedError) Error() string {
 		size := (len(b.errors) - 1) * len(singleLineSep)
 
 		for _, err := range b.errors {
-			if err != nil {
-				size += len(err.Error())
-			}
+			size += len(err.Error())
 		}
 
 		builder := stringsBuildersPool.Get().(*strings.Builder)
@@ -58,13 +56,11 @@ func (b *BufferedError) Error() string {
 
 func (b *BufferedError) writeSingleLine(w io.Writer) {
 	for i, err := range b.errors {
-		if err != nil {
-			if i > 0 {
-				w.Write(singleLineSep)
-			}
-
-			io.WriteString(w, err.Error())
+		if i > 0 {
+			w.Write(singleLineSep)
 		}
+
+		io.WriteString(w, err.Error())
 	}
 }
 
@@ -75,17 +71,15 @@ func (b *BufferedError) writeMultiLine(w io.Writer, ident int) {
 	}
 
 	for i, err := range b.errors {
-		if err != nil {
-			if i > 0 {
-				w.Write(multilineSep)
-			}
+		if i > 0 {
+			w.Write(multilineSep)
+		}
 
-			if e, ok := err.(*BufferedError); ok {
-				e.writeMultiLine(w, ident+1)
-			} else {
-				w.Write(spaces)
-				io.WriteString(w, err.Error())
-			}
+		if e, ok := err.(*BufferedError); ok {
+			e.writeMultiLine(w, ident+1)
+		} else {
+			w.Write(spaces)
+			io.WriteString(w, err.Error())
 		}
 	}
 }
@@ -137,13 +131,13 @@ func (b *BufferedError) Clear() {
 
 // Add adds given error to the errors buffer.
 // No-op if errors len is 0.
-func (b *BufferedError) Add(errs ...error) {
-	if len(errs) == 0 {
+func (b *BufferedError) Add(err error) {
+	if err == nil {
 		return
 	}
 
 	b.Lock()
-	b.errors = append(b.errors, errs...)
+	b.errors = append(b.errors, err)
 	b.Unlock()
 }
 
@@ -157,13 +151,7 @@ func (b *BufferedError) Err() error {
 		return nil
 	}
 
-	for _, err := range b.errors {
-		if err != nil {
-			return b
-		}
-	}
-
-	return nil
+	return b
 }
 
 // NewErrorsBuffer creates empty [BufferedError].
@@ -195,5 +183,4 @@ func NewFromError(err error) *BufferedError {
 // Deprecated: warnings buffer was removed.
 func NewBufferFromWarning(err error) *BufferedError {
 	panic("BufferedError does not contain warnings buffer")
-	return nil
 }
