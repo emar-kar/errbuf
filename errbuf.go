@@ -47,6 +47,9 @@ func (b *BufferedError) Error() string {
 		builder := stringsBuildersPool.Get().(*strings.Builder)
 		builder.Reset()
 
+		// Only pre-size on a fresh builder. Reused builders from the pool
+		// retain their capacity, so we skip the err.Error() scan cost and
+		// let the builder grow naturally if the new payload exceeds it.
 		if builder.Cap() == 0 {
 			size := (len(b.errors) - 1) * len(singleLineSep)
 			for _, err := range b.errors {
@@ -99,9 +102,8 @@ func (b *BufferedError) writeMultiLine(w io.Writer, ident int) {
 //
 // The following format verbs are supported:
 //
-//	%s or %v   Prints errors continuously separated by semicolons (e.g. "err1; err2").
-//	%v         When not used with the '+' flag, it acts the same as a multiline printer
-//	           separating each error by newline and indenting nested BufferedErrors.
+//	%s         Prints errors on one line separated by semicolons (e.g. "err1; err2").
+//	%v         Prints errors separated by newlines (multiline).
 //	%+v        Prints the raw internal representation: "BufferedError{errors:[...]}".
 func (b *BufferedError) Format(f fmt.State, verb rune) {
 	b.RLock()
@@ -209,11 +211,11 @@ func (b *BufferedError) Add(errs ...error) {
 
 	for _, e := range errs {
 		if e != nil {
-			if nested, ok := e.(*BufferedError); ok && nested != b && nested.Err() != nil {
+			if nested, ok := e.(*BufferedError); ok && nested != b {
 				b.errors = append(b.errors, nested.Unwrap()...)
-			} else {
-				b.errors = append(b.errors, e)
+				continue
 			}
+			b.errors = append(b.errors, e)
 		}
 	}
 }
