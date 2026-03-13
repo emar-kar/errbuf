@@ -196,8 +196,7 @@ func (b *BufferedError) Add(errs ...error) {
 
 	for _, e := range errs {
 		if e != nil {
-			if nested, ok := e.(*BufferedError); ok {
-				// Prevent deadlocks and deep recursion.
+			if nested, ok := e.(*BufferedError); ok && nested != b && nested.Err() != nil {
 				b.errors = append(b.errors, nested.Unwrap()...)
 			} else {
 				b.errors = append(b.errors, e)
