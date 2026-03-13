@@ -115,8 +115,31 @@ func (b *BufferedError) Unwrap() []error {
 	return append(([]error)(nil), b.errors...)
 }
 
-// Grow grows internal errors slice capacity to hold n number of errors.
-// If actual capacity is bigger than n this function is no-op.
+// Is reports whether any error in b's buffer matches target.
+func (b *BufferedError) Is(target error) bool {
+	b.RLock()
+	defer b.RUnlock()
+	for _, err := range b.errors {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
+}
+
+// As finds the first error in b's buffer that matches target, and if one is found, sets
+// target to that error value and returns true. Otherwise, it returns false.
+func (b *BufferedError) As(target any) bool {
+	b.RLock()
+	defer b.RUnlock()
+	for _, err := range b.errors {
+		if errors.As(err, target) {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *BufferedError) Grow(n int) {
 	b.RLock()
 	if cap(b.errors) < n {
