@@ -228,42 +228,36 @@ func init() {
 }
 
 func BenchmarkBufferedErrorAddSlice1000(b *testing.B) {
+	buf := New()
+	buf.Grow(len(errs))
 	b.ResetTimer()
 	for range b.N {
-		b.StopTimer()
-		buf := New()
-		buf.Grow(len(errs))
-		b.StartTimer()
-		
 		for _, err := range errs {
 			buf.Add(err)
 		}
 		_ = buf.Error()
+		buf.Clear()
 	}
 }
 
 func BenchmarkBufferedErrorAddSlice1000All(b *testing.B) {
+	buf := New()
 	b.ResetTimer()
 	for range b.N {
-		b.StopTimer()
-		buf := New()
-		b.StartTimer()
-		
 		buf.Add(errs...)
 		_ = buf.Error()
+		buf.Clear()
 	}
 }
 
 func BenchmarkBufferedErrorAdd1(b *testing.B) {
 	err1 := errors.New("test error")
+	buf := New()
 	b.ResetTimer()
 	for range b.N {
-		b.StopTimer()
-		buf := New()
-		b.StartTimer()
-
 		buf.Add(err1)
 		_ = buf.Error()
+		buf.Clear()
 	}
 }
 
@@ -283,16 +277,14 @@ func BenchmarkBufferedErrorAddParallel(b *testing.B) {
 }
 
 func BenchmarkBuffereErrorMultiLine(b *testing.B) {
+	buf := NewFromError(nil)
+	buf.Grow(len(errs))
 	b.ResetTimer()
 	for range b.N {
-		b.StopTimer()
-		buf := NewFromError(nil)
-		buf.Grow(len(errs))
 		for _, err := range errs {
 			buf.Add(err)
 		}
-		b.StartTimer()
-		
 		_ = fmt.Sprintf("%v", buf)
+		buf.Clear()
 	}
 }
