@@ -172,11 +172,15 @@ func (b *BufferedError) grow(n int) {
 	copy(b.errors, old)
 }
 
-// Clear empties the internal buffer. The underlying backing array
-// is removed and the memory will eventually be collected by the GC.
+// Clear empties the internal buffer. To avoid costly reallocations,
+// the underlying backing array is retained. Elements are nil'd out
+// so the garbage collector can reclaim the error objects safely.
 func (b *BufferedError) Clear() {
 	b.Lock()
-	b.errors = ([]error)(nil)
+	for i := range b.errors {
+		b.errors[i] = nil
+	}
+	b.errors = b.errors[:0]
 	b.Unlock()
 }
 
