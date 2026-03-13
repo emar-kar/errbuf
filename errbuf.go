@@ -4,7 +4,7 @@
 package errbuf
 
 import (
-"errors"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -61,7 +61,7 @@ func (b *BufferedError) Error() string {
 		// Protect from memory leaks: Do not return huge builders to the pool.
 		// Maximum 32KB allocation retained per builder.
 		if builder.Cap() <= 32*1024 {
-		stringsBuildersPool.Put(builder)
+			stringsBuildersPool.Put(builder)
 		}
 
 		return result
@@ -89,13 +89,10 @@ func (b *BufferedError) writeMultiLine(w io.Writer, ident int) {
 			w.Write(multilineSep)
 		}
 
-		if e, ok := err.(*BufferedError); ok {
-			e.writeMultiLine(w, ident+1)
-		} else {
-			w.Write(spaces)
-			io.WriteString(w, err.Error())
-		}
+		w.Write(spaces)
+		io.WriteString(w, err.Error())
 	}
+}
 
 // Format implements the fmt.Formatter interface to support custom error formatting.
 //
@@ -169,9 +166,9 @@ func (b *BufferedError) Grow(n int) {
 }
 
 func (b *BufferedError) grow(n int) {
-		old := b.errors
-		b.errors = make([]error, len(old), n)
-		copy(b.errors, old)
+	old := b.errors
+	b.errors = make([]error, len(old), n)
+	copy(b.errors, old)
 }
 
 // Clear empties the internal buffer. The underlying backing array
@@ -190,8 +187,18 @@ func (b *BufferedError) Add(errs ...error) {
 	}
 
 	b.Lock()
-	b.errors = append(b.errors, err)
-	b.Unlock()
+	defer b.Unlock()
+
+	for _, e := range errs {
+		if e != nil {
+			if nested, ok := e.(*BufferedError); ok {
+				// Prevent deadlocks and deep recursion.
+				b.errors = append(b.errors, nested.Unwrap()...)
+			} else {
+				b.errors = append(b.errors, e)
+			}
+		}
+	}
 }
 
 // Err returns the BufferedError itself if it contains one or more errors.
