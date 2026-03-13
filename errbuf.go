@@ -47,6 +47,9 @@ func (b *BufferedError) Error() string {
 		builder := stringsBuildersPool.Get().(*strings.Builder)
 		builder.Reset()
 
+		// Only pre-size on a fresh builder. Reused builders from the pool
+		// retain their capacity, so we skip the err.Error() scan cost and
+		// let the builder grow naturally if the new payload exceeds it.
 		if builder.Cap() == 0 {
 			size := (len(b.errors) - 1) * len(singleLineSep)
 			for _, err := range b.errors {
