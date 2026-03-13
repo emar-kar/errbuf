@@ -1,7 +1,10 @@
-// Package errbuf allows to bufferize errors before processing them.
+// Package errbuf provides a thread-safe buffer for accumulating multiple errors.
+// It implements the standard error interface and supports custom formatting
+// for single-line or multi-line display of the aggregated errors.
 package errbuf
 
 import (
+"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -18,14 +21,19 @@ var (
 	multilineSep  = []byte("\n")
 )
 
-// BufferedError wrapper around errors slice with mutex.
+// BufferedError represents an aggregated collection of errors.
+// It is safe for concurrent use by multiple goroutines. The zero value
+// is an empty, ready-to-use error buffer.
 type BufferedError struct {
 	sync.RWMutex
 
 	errors []error
 }
 
-// Error formats errors in the buffer into the string.
+// Error returns a string representation of all buffered errors.
+// If the buffer is empty, it returns an empty string.
+// If the buffer contains exactly one error, it returns that error's string representation.
+// For two or more errors, they are joined by a semicolon separator ("; ").
 func (b *BufferedError) Error() string {
 	b.RLock()
 	defer b.RUnlock()
@@ -88,8 +96,15 @@ func (b *BufferedError) writeMultiLine(w io.Writer, ident int) {
 			io.WriteString(w, err.Error())
 		}
 	}
-}
 
+// Format implements the fmt.Formatter interface to support custom error formatting.
+//
+// The following format verbs are supported:
+//
+//	%s or %v   Prints errors continuously separated by semicolons (e.g. "err1; err2").
+//	%v         When not used with the '+' flag, it acts the same as a multiline printer
+//	           separating each error by newline and indenting nested BufferedErrors.
+//	%+v        Prints the raw internal representation: "BufferedError{errors:[...]}".
 func (b *BufferedError) Format(f fmt.State, verb rune) {
 	b.RLock()
 	defer b.RUnlock()
@@ -107,7 +122,8 @@ func (b *BufferedError) Format(f fmt.State, verb rune) {
 	}
 }
 
-// Unwrap returns a copy of the buffer errors.
+// Unwrap returns a shallow copy of the underlying slice of accumulated errors.
+// Modifications to the returned slice will not affect the buffer.
 func (b *BufferedError) Unwrap() []error {
 	b.RLock()
 	defer b.RUnlock()
@@ -140,6 +156,10 @@ func (b *BufferedError) As(target any) bool {
 	return false
 }
 
+// Grow increases the internal slice capacity to accommodate n errors.
+// If the internal capacity is already greater than or equal to n, this is a no-op.
+// This is useful for optimizing allocations when the number of errors to be added
+// is known in advance.
 func (b *BufferedError) Grow(n int) {
 	b.Lock()
 	defer b.Unlock()
@@ -154,18 +174,18 @@ func (b *BufferedError) grow(n int) {
 		copy(b.errors, old)
 }
 
-// Clear clears internal slice of errors.
-// Freed memory will be collected by GC.
+// Clear empties the internal buffer. The underlying backing array
+// is removed and the memory will eventually be collected by the GC.
 func (b *BufferedError) Clear() {
 	b.Lock()
 	b.errors = ([]error)(nil)
 	b.Unlock()
 }
 
-// Add adds given error to the errors buffer.
-// No-op if error is nil.
-func (b *BufferedError) Add(err error) {
-	if err == nil {
+// Add appends one or more errors to the buffer.
+// Nil errors are ignored and will not be added to the buffer.
+func (b *BufferedError) Add(errs ...error) {
+	if len(errs) == 0 {
 		return
 	}
 
@@ -174,7 +194,9 @@ func (b *BufferedError) Add(err error) {
 	b.Unlock()
 }
 
-// Err returns nil if error buffer is empty.
+// Err returns the BufferedError itself if it contains one or more errors.
+// If the buffer is empty, it returns nil. This is useful for conditional error returning
+// like: `if err := buf.Err(); err != nil { return err }`.
 func (b *BufferedError) Err() error {
 	b.RLock()
 	defer b.RUnlock()
@@ -186,12 +208,13 @@ func (b *BufferedError) Err() error {
 	return b
 }
 
-// New creates empty [BufferedError].
+// New creates and returns an empty, ready-to-use BufferedError.
 func New() *BufferedError {
 	return &BufferedError{errors: ([]error)(nil)}
 }
 
-// NewFromError creates new [BufferedError] from the given error.
+// NewFromError creates a new BufferedError initialized with the given error.
+// If the given err is nil, it returns an empty BufferedError.
 func NewFromError(err error) *BufferedError {
 	if err == nil {
 		return New()
