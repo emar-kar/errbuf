@@ -52,7 +52,7 @@ func (b *BufferedError) Error() string {
 			for _, err := range b.errors {
 				size += len(err.Error())
 			}
-		builder.Grow(size)
+			builder.Grow(size)
 		}
 
 		b.writeSingleLine(builder)
@@ -193,6 +193,19 @@ func (b *BufferedError) Add(errs ...error) {
 
 	b.Lock()
 	defer b.Unlock()
+
+	// Preallocate exact capacities to bypass slice growing allocations on appends.
+	// Apply manual scaling for bulk insertions. Single error uses append.
+	if len(errs) > 1 {
+		available := cap(b.errors) - len(b.errors)
+		if available < len(errs) {
+			newCap := cap(b.errors) * 2
+			if expected := len(b.errors) + len(errs); expected > newCap {
+				newCap = expected
+			}
+			b.grow(newCap)
+		}
+	}
 
 	for _, e := range errs {
 		if e != nil {
