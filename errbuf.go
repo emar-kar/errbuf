@@ -49,7 +49,13 @@ func (b *BufferedError) Error() string {
 		b.writeSingleLine(builder)
 
 		result := builder.String()
+
+		// Protect from memory leaks: Do not return huge builders to the pool.
+		// Maximum 32KB allocation retained per builder.
+		if builder.Cap() <= 32*1024 {
 		stringsBuildersPool.Put(builder)
+		}
+
 		return result
 	}
 }
