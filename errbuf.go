@@ -44,15 +44,16 @@ func (b *BufferedError) Error() string {
 	case 1:
 		return b.errors[0].Error()
 	default:
-		size := (len(b.errors) - 1) * len(singleLineSep)
-
-		for _, err := range b.errors {
-			size += len(err.Error())
-		}
-
 		builder := stringsBuildersPool.Get().(*strings.Builder)
 		builder.Reset()
+
+		if builder.Cap() == 0 {
+			size := (len(b.errors) - 1) * len(singleLineSep)
+			for _, err := range b.errors {
+				size += len(err.Error())
+			}
 		builder.Grow(size)
+		}
 
 		b.writeSingleLine(builder)
 
