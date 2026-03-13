@@ -99,9 +99,8 @@ func (b *BufferedError) writeMultiLine(w io.Writer, ident int) {
 //
 // The following format verbs are supported:
 //
-//	%s or %v   Prints errors continuously separated by semicolons (e.g. "err1; err2").
-//	%v         When not used with the '+' flag, it acts the same as a multiline printer
-//	           separating each error by newline and indenting nested BufferedErrors.
+//	%s         Prints errors on one line separated by semicolons (e.g. "err1; err2").
+//	%v         Prints errors separated by newlines (multiline).
 //	%+v        Prints the raw internal representation: "BufferedError{errors:[...]}".
 func (b *BufferedError) Format(f fmt.State, verb rune) {
 	b.RLock()
