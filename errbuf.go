@@ -176,8 +176,8 @@ func (b *BufferedError) Add(err error) {
 
 // Err returns nil if error buffer is empty.
 func (b *BufferedError) Err() error {
-	b.Lock()
-	defer b.Unlock()
+	b.RLock()
+	defer b.RUnlock()
 
 	if len(b.errors) == 0 {
 		return nil
