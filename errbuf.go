@@ -141,13 +141,17 @@ func (b *BufferedError) As(target any) bool {
 }
 
 func (b *BufferedError) Grow(n int) {
-	b.RLock()
+	b.Lock()
+	defer b.Unlock()
 	if cap(b.errors) < n {
+		b.grow(n)
+	}
+}
+
+func (b *BufferedError) grow(n int) {
 		old := b.errors
 		b.errors = make([]error, len(old), n)
 		copy(b.errors, old)
-	}
-	b.RUnlock()
 }
 
 // Clear clears internal slice of errors.
