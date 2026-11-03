@@ -21,6 +21,21 @@ func TestNewFromError(t *testing.T) {
 			t.Errorf("expected [test], got %v", buf.errors)
 		}
 	})
+
+	t.Run("nested buffer", func(t *testing.T) {
+		nested := New()
+		nested.Add(errors.New("nested1"), errors.New("nested2"))
+
+		buf := NewFromError(nested)
+		if len(buf.errors) != 2 {
+			t.Errorf("expected nested buffer to be flattened into 2 errors, got %d", len(buf.errors))
+		}
+
+		expected := "nested1\nnested2"
+		if got := fmt.Sprintf("%v", buf); got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
+		}
+	})
 }
 
 func TestBufferedError_Add(t *testing.T) {
@@ -117,6 +132,65 @@ func TestBufferedError_Format(t *testing.T) {
 
 		got := fmt.Sprintf("%v", parent)
 		expected := "parent1\nnested1\nnested2\nparent2"
+		if got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
+		}
+	})
+
+	t.Run("wrapped buffer multiline (%v)", func(t *testing.T) {
+		nested := New()
+		nested.Add(errors.New("nested1"), errors.New("nested2"))
+
+		parent := New()
+		parent.Add(fmt.Errorf("file: a.conf: %w", nested), errors.New("parent1"))
+
+		got := fmt.Sprintf("%v", parent)
+		expected := "file: a.conf:\n  nested1\n  nested2\nparent1"
+		if got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
+		}
+	})
+
+	t.Run("wrapped buffer with single error (%v)", func(t *testing.T) {
+		nested := New()
+		nested.Add(errors.New("nested1"))
+
+		parent := New()
+		parent.Add(fmt.Errorf("file: a.conf: %w", nested), errors.New("parent1"))
+
+		got := fmt.Sprintf("%v", parent)
+		expected := "file: a.conf: nested1\nparent1"
+		if got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
+		}
+	})
+
+	t.Run("deeply wrapped buffers (%v)", func(t *testing.T) {
+		deep := New()
+		deep.Add(errors.New("deep1"), errors.New("deep2"))
+
+		nested := New()
+		nested.Add(fmt.Errorf("stage: %w", deep), errors.New("nested1"))
+
+		parent := New()
+		parent.Add(fmt.Errorf("file: a.conf: %w", nested), errors.New("parent1"))
+
+		got := fmt.Sprintf("%v", parent)
+		expected := "file: a.conf:\n  stage:\n    deep1\n    deep2\n  nested1\nparent1"
+		if got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
+		}
+	})
+
+	t.Run("wrapped buffer with suffix (%v)", func(t *testing.T) {
+		nested := New()
+		nested.Add(errors.New("nested1"), errors.New("nested2"))
+
+		parent := New()
+		parent.Add(fmt.Errorf("%w (retry)", nested))
+
+		got := fmt.Sprintf("%v", parent)
+		expected := "nested1\nnested2 (retry)"
 		if got != expected {
 			t.Errorf("expected %q, got %q", expected, got)
 		}

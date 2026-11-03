@@ -17,8 +17,9 @@ var (
 		New: func() any { return &strings.Builder{} },
 	}
 
-	singleLineSep = []byte("; ")
-	multilineSep  = []byte("\n")
+	singleLineSep   = []byte("; ")
+	multilineSep    = []byte("\n")
+	multilineIndent = "  "
 )
 
 // BufferedError represents an aggregated collection of errors.
@@ -82,19 +83,36 @@ func (b *BufferedError) writeSingleLine(w io.Writer) {
 	}
 }
 
-func (b *BufferedError) writeMultiLine(w io.Writer, ident int) {
-	spaces := make([]byte, ident)
-	for i := range ident {
-		spaces[i] = ' '
-	}
-
+func (b *BufferedError) writeMultiLine(w io.Writer) {
 	for i, err := range b.errors {
 		if i > 0 {
 			w.Write(multilineSep)
 		}
 
-		w.Write(spaces)
-		io.WriteString(w, err.Error())
+		msg := err.Error()
+
+		// Error which wraps a buffer, e.g. fmt.Errorf("prefix: %w", buf), is
+		// printed as its prefix with the buffer errors indented below it.
+		// Deeper buffers are already indented by their own formatting.
+		var nested *BufferedError
+		if errors.As(err, &nested) && nested != b {
+			block := fmt.Sprintf("%v", nested)
+			prefix, ok := strings.CutSuffix(msg, block)
+			prefix = strings.TrimRight(prefix, " ")
+
+			if ok && prefix != "" && strings.Contains(block, "\n") {
+				io.WriteString(w, prefix)
+				w.Write(multilineSep)
+				io.WriteString(
+					w,
+					multilineIndent+strings.ReplaceAll(block, "\n", "\n"+multilineIndent),
+				)
+
+				continue
+			}
+		}
+
+		io.WriteString(w, msg)
 	}
 }
 
@@ -103,7 +121,9 @@ func (b *BufferedError) writeMultiLine(w io.Writer, ident int) {
 // The following format verbs are supported:
 //
 //	%s         Prints errors on one line separated by semicolons (e.g. "err1; err2").
-//	%v         Prints errors separated by newlines (multiline).
+//	%v         Prints errors separated by newlines (multiline). Error which wraps
+//	           another buffer is printed as its prefix with the buffer errors
+//	           indented below it.
 //	%+v        Prints the raw internal representation: "BufferedError{errors:[...]}".
 func (b *BufferedError) Format(f fmt.State, verb rune) {
 	b.RLock()
@@ -116,7 +136,7 @@ func (b *BufferedError) Format(f fmt.State, verb rune) {
 			return
 		}
 
-		b.writeMultiLine(f, 0)
+		b.writeMultiLine(f)
 	default:
 		b.writeSingleLine(f)
 	}
@@ -240,10 +260,11 @@ func New() *BufferedError {
 }
 
 // NewFromError creates a new BufferedError initialized with the given error.
-// If the given err is nil, it returns an empty BufferedError.
+// If the given err is nil, it returns an empty BufferedError. Nested
+// BufferedError is flattened the same way as in [BufferedError.Add].
 func NewFromError(err error) *BufferedError {
-	if err == nil {
-		return New()
-	}
-	return &BufferedError{errors: []error{err}}
+	b := New()
+	b.Add(err)
+
+	return b
 }
