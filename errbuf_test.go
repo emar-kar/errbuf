@@ -21,6 +21,21 @@ func TestNewFromError(t *testing.T) {
 			t.Errorf("expected [test], got %v", buf.errors)
 		}
 	})
+
+	t.Run("nested buffer", func(t *testing.T) {
+		nested := New()
+		nested.Add(errors.New("nested1"), errors.New("nested2"))
+
+		buf := NewFromError(nested)
+		if len(buf.errors) != 2 {
+			t.Errorf("expected nested buffer to be flattened into 2 errors, got %d", len(buf.errors))
+		}
+
+		expected := "nested1\nnested2"
+		if got := fmt.Sprintf("%v", buf); got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
+		}
+	})
 }
 
 func TestBufferedError_Add(t *testing.T) {

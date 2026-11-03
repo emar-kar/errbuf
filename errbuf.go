@@ -240,10 +240,11 @@ func New() *BufferedError {
 }
 
 // NewFromError creates a new BufferedError initialized with the given error.
-// If the given err is nil, it returns an empty BufferedError.
+// If the given err is nil, it returns an empty BufferedError. Nested
+// BufferedError is flattened the same way as in [BufferedError.Add].
 func NewFromError(err error) *BufferedError {
-	if err == nil {
-		return New()
-	}
-	return &BufferedError{errors: []error{err}}
+	b := New()
+	b.Add(err)
+
+	return b
 }
